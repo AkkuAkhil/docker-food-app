@@ -1,39 +1,50 @@
-const fs = require("fs");
-const path = require("path");
+const fetch = require("node-fetch");
+const Food = require("../models/food");
+const { FOOD_API_URL, STATUS_CODE } = require("../util/constants");
+const { throwError, nextError } = require("../util/utils");
 
-let version = 1;
-const filePath = path.join(__dirname, "..", "data", "food.json");
+// constants
+const FOOD_FETCHED = "Food data fetched suucesfully";
+const FOOD_FETCH_ERROR = "Error in fetching food data";
+const FOOD_EXISTS = "Food already exists";
+const FOOD_INSERTED = "Food inserted succesfully";
 
-exports.listFood = (req, res, next) => {
+exports.listFood = async (req, res, next) => {
   try {
-    const jsonString = fs.readFileSync(filePath);
-    const food = JSON.parse(jsonString);
-    res.status(200).json({ success: true, food });
-  } catch (err) {
-    console.log(err);
+    const foodList = await Food.find();
+    if (!foodList) throwError(FOOD_FETCH_ERROR, STATUS_CODE.BAD_REQUEST);
 
-    res
-      .status(404)
-      .json({ success: false, message: "Error in reading data file" });
+    res.status(STATUS_CODE.OK).json({ message: FOOD_FETCHED, foodList });
+  } catch (err) {
+    nextError(err, next);
   }
 };
 
-exports.addFood = (req, res, next) => {
+exports.addFood = async (req, res, next) => {
   try {
-    const food = {
-      name: "Pie",
-      location: "America",
-      category: "Desert",
-      version: version++,
-    };
+    const foodData = await fetch(FOOD_API_URL);
+    const { meals } = await foodData.json();
+    const foodId = meals[0].idMeal;
 
-    const jsonString = JSON.stringify(food);
-    fs.writeFileSync(filePath, jsonString);
+    const foodExists = await Food.findById(foodId);
+    if (foodExists) throwError(FOOD_EXISTS, STATUS_CODE.BAD_REQUEST);
+
+    const food = new Food({
+      _id: foodId,
+      name: meals[0].strMeal,
+      category: meals[0].strCategory || "",
+      area: meals[0].strArea || "",
+      instructions: meals[0].strInstructions || "",
+      image: meals[0].strMealThumb || "",
+      source: meals[0].strSource || "",
+      youtube: meals[0].strYoutube || "",
+    });
+    await food.save();
+
     res
-      .status(201)
-      .json({ success: true, message: "Inserted data succesfully" });
+      .status(STATUS_CODE.CREATED)
+      .json({ success: true, message: FOOD_INSERTED });
   } catch (err) {
-    console.log(err);
-    res.status(400).json({ success: false, message: "Error in writing data" });
+    nextError(err, next);
   }
 };
